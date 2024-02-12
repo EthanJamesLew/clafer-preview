@@ -3,6 +3,8 @@ const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+let claferPanel = undefined;
+
 function activate(context) {
     let disposable = vscode.commands.registerCommand('clafer-preview.generateDiagram', function () {
         const editor = vscode.window.activeTextEditor;
@@ -13,27 +15,78 @@ function activate(context) {
 
         const document = editor.document;
         const userFilePath = document.fileName;
-        const outputPath = userFilePath + ".svg"; // Adjust as needed
 
-        // Fetch user-configured paths
-        const chocoSolverPath = vscode.workspace.getConfiguration().get('clafer-preview.chocosolverPath');
-        const plantUmlPath = vscode.workspace.getConfiguration().get('clafer-preview.plantumlPath');
-
-        // Execute commands
-        runJavaCommands(userFilePath, chocoSolverPath, plantUmlPath, outputPath, function(svgFilePath) {
-            const panel = vscode.window.createWebviewPanel(
-                'diagram',
-                'Diagram',
-                vscode.ViewColumn.One,
-                {}
-            );
-            panel.webview.html = getWebviewContent(panel.webview, svgFilePath);
-        });
+        // Call the function to generate and display the diagram
+        generateAndDisplayDiagram(context, userFilePath);
     });
 
-    context.subscriptions.push(disposable, vscode.workspace.onDidSaveTextDocument((document) => {
-        vscode.commands.executeCommand('clafer-preview.generateDiagram');
-    }));
+    context.subscriptions.push(disposable);
+}
+
+function generateAndDisplayDiagram(context, userFilePath) {
+    const outputPath = userFilePath + ".svg"; // Adjust as needed
+    // Fetch user-configured paths
+    const chocoSolverPath = vscode.workspace.getConfiguration().get('clafer-preview.chocosolverPath');
+    const plantUmlPath = vscode.workspace.getConfiguration().get('clafer-preview.plantumlPath');
+
+    console.log("run java commands");
+    runJavaCommands(userFilePath, chocoSolverPath, plantUmlPath, outputPath, function(svgFilePath) {
+        if (!claferPanel) {
+            claferPanel = vscode.window.createWebviewPanel(
+                'claferDiagram',
+                'Clafer Diagram',
+                getColumnForPanel(), // Dynamically choose the column
+                { enableScripts: true }
+            );
+
+            claferPanel.onDidDispose(() => {
+                claferPanel = undefined;
+            }, null, context.subscriptions);
+
+            // Listen for view state changes to refresh the diagram as needed
+            claferPanel.onDidChangeViewState(() => {
+                generateAndDisplayDiagram(context, userFilePath); // Re-generate and display diagram upon view state changes
+            }, null, context.subscriptions);
+        }
+
+        console.log("update claferPanel");
+        claferPanel.webview.html = getWebviewContent(claferPanel.webview, svgFilePath);
+    });
+}
+
+function getWebviewContent(webview, svgFilePath) {
+    // Convert the file system path to a URI that can be used in the webview
+    const uniqueId = new Date.now().toString();
+    const src = webview.asWebviewUri(vscode.Uri.file(svgFilePath));
+    return `<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Clafer Diagram</title>
+    </head>
+    <body>
+        Feature Model
+        <img src="${src}?v=${uniqueId}" />
+    </body>
+    </html>`;
+}
+
+function getColumnForPanel() {
+    // Attempt to place the webview in the column to the side of the active editor
+    const activeEditor = vscode.window.activeTextEditor;
+    if (!activeEditor) {
+        return vscode.ViewColumn.Two;
+    }
+
+    switch (activeEditor.viewColumn) {
+        case vscode.ViewColumn.One:
+            return vscode.ViewColumn.Two;
+        case vscode.ViewColumn.Two:
+            return vscode.ViewColumn.Three;
+        default:
+            return vscode.ViewColumn.One;
+    }
 }
 
 function deactivate() {}
