@@ -10,8 +10,9 @@
     "Other"
   ],
   "activationEvents": [
+    "onSave:file:*.cfr",
     "onSave:file:**/*.cfr"
-  ], 
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
